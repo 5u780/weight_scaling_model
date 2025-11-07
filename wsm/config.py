@@ -36,8 +36,8 @@ EQUALIZER_DIAMETER_MM: float = 25.0        # Equalizer tube diameter
 CD_STREAMLINED: float = 0.23               # Torso + protector + legs
 CD_HEAD: float = 0.40                      # Head with helmet
 CD_ARMS: float = 1.00                      # Arms (cylinders perpendicular to flow)
-CD_EQUALIZERS: float = 1.00                # Equalizers (cylinders perpendicular to flow)
-# CD_EQUALIZERS: float = 0.00                # Equalizers (cylinders perpendicular to flow)
+# CD_EQUALIZERS: float = 1.00                # Equalizers (cylinders perpendicular to flow)
+CD_EQUALIZERS: float = 0.00                # Equalizers (cylinders perpendicular to flow)
 CD_LINES: float = 1.00                     # Lines drag coefficient (cylinders approx perpendicular)
 
 GRAVITY: float = 9.81                      # Gravitational acceleration (m/s^2)

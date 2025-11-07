@@ -21,7 +21,8 @@ from wsm.plots import (
 
 
 def main():
-    CD_WING_REF = calibrate_cd_wing_ref()
+    # Calibrate wing Cd without equalizer drag so baseline isn't biased.
+    CD_WING_REF = calibrate_cd_wing_ref(CD_EQUALIZERS_FOR_CAL=0.0)
 
     print("\n" + "="*80)
     print("SCALING MODEL: Dimensions calculated from height & weight using SD")
@@ -224,6 +225,7 @@ def main():
         )
         cal_areas = frontal_areas_iso(cal_person)
         v_cal = cfg.CAL_REF_SPEED_MPS
+        # Re-run reference condition WITHOUT equalizers to check calibration target
         D_body = drag_all_iso(
             cal_areas,
             speed_mps=v_cal,
@@ -232,7 +234,7 @@ def main():
             Cd_head=cfg.CD_HEAD,
             head_exposed_fraction=cfg.HEAD_EXPOSED_FRACTION,
             Cd_arms=cfg.CD_ARMS,
-            Cd_equalizers=cfg.CD_EQUALIZERS,
+            Cd_equalizers=0.0,
         )
         q_cal = 0.5 * cfg.RHO_AIR * v_cal**2
         A_lines_cal = lines_area_from_wing_size(cfg.CAL_REF_WING_KG)
@@ -241,7 +243,27 @@ def main():
         W_cal = calculate_wing_drag(cfg.CAL_REF_WING_KG, pilot_drag_cal, CD_WING_REF, v_cal, cfg.RHO_AIR, e_oswald=cfg.E_OSWALD)
         glide_cal = W_cal["glide_ratio"]
         sink_cal = v_cal / glide_cal if glide_cal > 0 else float("nan")
-        print(f"\nCalibration check (115 kg @ 63 km/h): sink ≈ {sink_cal:.2f} m/s (target {cfg.CAL_REF_SINK_MPS:.2f})")
+        print(f"\nCalibration check (115 kg @ {cfg.CAL_REF_SPEED_MPS*3.6:.0f} km/h, no equalizers): sink ≈ {sink_cal:.2f} m/s (target {cfg.CAL_REF_SINK_MPS:.2f})")
+        if cfg.CD_EQUALIZERS > 0:
+            # Show effect when applying current equalizer Cd at calibration speed
+            D_body_eq = drag_all_iso(
+                cal_areas,
+                speed_mps=v_cal,
+                rho_air=cfg.RHO_AIR,
+                Cd_streamlined=cfg.CD_STREAMLINED,
+                Cd_head=cfg.CD_HEAD,
+                head_exposed_fraction=cfg.HEAD_EXPOSED_FRACTION,
+                Cd_arms=cfg.CD_ARMS,
+                Cd_equalizers=cfg.CD_EQUALIZERS,
+            )
+            q_cal_eq = 0.5 * cfg.RHO_AIR * v_cal**2
+            A_lines_cal_eq = lines_area_from_wing_size(cfg.CAL_REF_WING_KG)
+            D_lines_cal_eq = q_cal_eq * cfg.CD_LINES * A_lines_cal_eq
+            pilot_drag_cal_eq = D_body_eq["Drag_total_N"] + D_lines_cal_eq
+            W_cal_eq = calculate_wing_drag(cfg.CAL_REF_WING_KG, pilot_drag_cal_eq, CD_WING_REF, v_cal, cfg.RHO_AIR, e_oswald=cfg.E_OSWALD)
+            glide_cal_eq = W_cal_eq["glide_ratio"]
+            sink_cal_eq = v_cal / glide_cal_eq if glide_cal_eq > 0 else float("nan")
+            print(f"  With equalizers Cd={cfg.CD_EQUALIZERS}: sink ≈ {sink_cal_eq:.2f} m/s (higher sink expected)")
     except Exception:
         pass
 

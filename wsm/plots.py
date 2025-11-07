@@ -133,9 +133,12 @@ def plot_polar_for_reference(CD_WING_REF: float):
         plt.show(block=cfg.SHOW_BLOCKING)
         if not cfg.SHOW_BLOCKING:
             plt.pause(0.001)
-    except TypeError:
-        # Fallback for very old matplotlib without 'block' parameter
-        plt.show()
+    except Exception:
+        # Be robust to backend quirks on non-blocking shows
+        try:
+            plt.show()
+        except Exception:
+            pass
 
 
 def plot_polars_for_all_pilots(CD_WING_REF: float):
@@ -297,8 +300,11 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
         plt.show(block=cfg.SHOW_BLOCKING)
         if not cfg.SHOW_BLOCKING:
             plt.pause(0.001)
-    except TypeError:
-        plt.show()
+    except Exception:
+        try:
+            plt.show()
+        except Exception:
+            pass
 
     if cfg.EXPORT_CSV and all_rows:
         try:
@@ -439,8 +445,11 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
         plt.show(block=cfg.SHOW_BLOCKING)
         if not cfg.SHOW_BLOCKING:
             plt.pause(0.001)
-    except TypeError:
-        plt.show()
+    except Exception:
+        try:
+            plt.show()
+        except Exception:
+            pass
 
     if cfg.EXPORT_CSV and all_rows:
         try:

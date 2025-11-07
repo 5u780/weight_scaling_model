@@ -87,9 +87,13 @@ def calculate_wing_drag(
     }
 
 
-def calibrate_cd_wing_ref() -> float:
+def calibrate_cd_wing_ref(CD_EQUALIZERS_FOR_CAL: float = 0.0) -> float:
     """Compute Cd_wing_ref on projected area so that the reference condition
     (CAL_REF_WING_KG at CAL_REF_SPEED_MPS) yields CAL_REF_SINK_MPS for CAL_REF_PILOT.
+
+    Note: Calibration is performed with an explicit equalizer Cd passed via
+    CD_EQUALIZERS_FOR_CAL (default 0.0) to avoid baking current cfg.CD_EQUALIZERS
+    into the baseline wing Cd.
     """
     height_cm, weight_kg, sex = cfg.CAL_REF_PILOT
 
@@ -114,7 +118,7 @@ def calibrate_cd_wing_ref() -> float:
         Cd_head=cfg.CD_HEAD,
         head_exposed_fraction=cfg.HEAD_EXPOSED_FRACTION,
         Cd_arms=cfg.CD_ARMS,
-        Cd_equalizers=cfg.CD_EQUALIZERS,
+        Cd_equalizers=CD_EQUALIZERS_FOR_CAL,
     )
     A_lines = lines_area_from_wing_size(cfg.CAL_REF_WING_KG)
     D_lines = q * cfg.CD_LINES * A_lines
