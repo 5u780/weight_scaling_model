@@ -21,18 +21,71 @@ def calculate_wing_drag(
     wing_max_kg: float,
     pilot_drag_N: float,
     Cd_wing_ref: float,               # total Cd at reference (projected area)
-    speed_mps: float = None,
-    rho_air: float = None,
+    speed_mps: float | None = None,
+    rho_air: float | None = None,
     e_oswald: float = cfg.E_OSWALD,
 ) -> Dict[str, float]:
-    if speed_mps is None:
-        speed_mps = cfg.SPEED_MPS
-    if rho_air is None:
-        rho_air = cfg.RHO_AIR
+    """Compute wing aerodynamic coefficients and drag at a given speed.
+
+        This routine converts a *rated* wing size (maximum takeoff/wing loading weight)
+        into an approximate flat and projected area, applies Reynolds and induced drag
+        corrections, and combines pilot + wing drag to produce total system drag and glide.
+
+        High-level steps:
+            1. Resolve defaults for speed and air density if not provided.
+            2. Compute dynamic pressure q = 0.5 * rho * V^2.
+            3. Approximate flat area from rating: S_flat ≈ wing_max_kg / 4.5.
+                 (4.5 kg/m² is an assumed reference loading constant.)
+            4. Projected area: S_proj = PROJECTED_TO_FLAT * S_flat.
+            5. Characteristic chord from aspect ratio: c = sqrt(S_flat / AR).
+            6. Reynolds number: Re = V * c / ν; also compute reference Re at calibration speed/size.
+            7. Reynolds correction factor: (Re_ref / Re)^REYNOLDS_EXPONENT applied only to profile (Cd0) drag.
+            8. Decompose calibrated reference Cd_wing_ref (projected) into Cd0_ref_proj + CDi_ref_proj.
+            9. Convert profile Cd0_ref_proj back to flat area form, apply Reynolds correction.
+            10. Compute current lift coefficient CL = W / (q * S_flat) with W = wing_max_kg * g.
+            11. Induced drag CDi = k_induced * CL^2 where k_induced = 1/(π e AR_flat).
+            12. Total wing Cd (flat area basis) = Cd0_corrected_flat + CDi.
+            13. Wing drag: D_wing = q * S_flat * CD_total.
+            14. Total system drag: D_total = pilot_drag_N + D_wing.
+            15. Glide ratio: L/D_total with L = W.
+
+        Assumptions / Notes:
+            - Flat area estimate is linear with rated weight; for better fidelity replace with actual area lookup.
+            - Reynolds correction uses an exponent (typ ~0.1–0.15) on the ratio of reference to current Re.
+            - Induced drag uses aspect ratio defined on flat area; projected aspect ratio is handled during calibration.
+            - Cd_wing_ref is calibrated externally to hit a target sink at reference conditions with equalizers excluded.
+            - Pilot drag is assumed already computed (includes lines + pilot components) and passed in via pilot_drag_N.
+
+        Parameters:
+            wing_max_kg      : rated wing size (kg)
+            pilot_drag_N     : drag of pilot + lines (N) at current speed
+            Cd_wing_ref      : calibrated total wing Cd (projected area) at reference condition
+            speed_mps        : flight speed (m/s). Defaults to cfg.SPEED_MPS if None.
+            rho_air          : air density (kg/m^3). Defaults to cfg.RHO_AIR if None.
+            e_oswald         : Oswald efficiency factor (dimensionless)
+
+        Returns (dict):
+            wing_area_m2_proj : projected wing area (m²)
+            wing_area_m2_flat : flat wing area (m²)
+            CL                : lift coefficient (flat area basis)
+            Cd0_flat          : Reynolds-corrected profile drag coefficient (flat area)
+            CDi               : induced drag coefficient (flat area)
+            CD_total          : total wing drag coefficient (flat area)
+            k_induced         : induced drag factor used (1/(π e AR_flat))
+            Reynolds          : current Reynolds number
+            Reynolds_ref      : reference Reynolds number
+            re_factor         : applied Reynolds correction factor
+            drag_wing_N       : wing drag (N)
+            drag_total_N      : total system drag (pilot + wing) (N)
+            glide_ratio       : L/D_total (dimensionless)
+        """
+    # Resolve defaults
+    speed_mps = speed_mps if speed_mps is not None else cfg.SPEED_MPS
+    rho_air = rho_air if rho_air is not None else cfg.RHO_AIR
 
     q = 0.5 * rho_air * speed_mps**2
 
-    wing_flat_area_m2 = wing_max_kg / 4.5
+    wing_flat_area_m2 = wing_max_kg / 4.5  # approximate flat area from rated max weight
     wing_projected_area_m2 = cfg.PROJECTED_TO_FLAT * wing_flat_area_m2
 
     chord_m = (wing_flat_area_m2 / cfg.WING_ASPECT_RATIO) ** 0.5

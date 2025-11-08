@@ -79,10 +79,11 @@ def plot_polar_for_reference(CD_WING_REF: float):
     idx_min_sink = df_polar["sink_mps"].idxmin()
     idx_best_ld = df_polar["glide_ratio"].idxmax()
 
-    v_min_sink = df_polar.loc[idx_min_sink, "speed_kmh"]
-    sink_min = df_polar.loc[idx_min_sink, "sink_mps"]
-    v_best_ld = df_polar.loc[idx_best_ld, "speed_kmh"]
-    best_ld = df_polar.loc[idx_best_ld, "glide_ratio"]
+    # Cast to float for type-checker friendliness
+    v_min_sink = float(df_polar.loc[idx_min_sink, "speed_kmh"])
+    sink_min = float(df_polar.loc[idx_min_sink, "sink_mps"])
+    v_best_ld = float(df_polar.loc[idx_best_ld, "speed_kmh"])
+    best_ld = float(df_polar.loc[idx_best_ld, "glide_ratio"])
 
     print(f"\nPolar summary (reference {ref_label} on {int(ref_wing)} kg wing):")
     print(f"  Min sink  ~ {sink_min:.2f} m/s at ~ {v_min_sink:.0f} km/h")
@@ -97,12 +98,13 @@ def plot_polar_for_reference(CD_WING_REF: float):
 
     plt.figure(figsize=(8, 5))
     plt.plot(df_polar["speed_kmh"], df_polar["sink_mps"], label="sink (m/s)", linewidth=2)
+    # Use list wrappers for compatibility with various backends/type checkers
     plt.scatter([v_min_sink], [sink_min], color="red", zorder=5, label="min sink")
     plt.annotate(f"min sink\n{sink_min:.2f} m/s @ {v_min_sink:.0f} km/h",
                  xy=(v_min_sink, sink_min), xytext=(v_min_sink+3, sink_min+0.15),
                  arrowprops=dict(arrowstyle="->", color="red"), fontsize=8, color="red")
     sink_best_ld = df_polar.loc[idx_best_ld, "sink_mps"]
-    plt.scatter([v_best_ld], [sink_best_ld], color="green", zorder=5, label="best L/D")
+    plt.scatter(v_best_ld, sink_best_ld, color="green", zorder=5, label="best L/D")
     plt.annotate(f"best L/D {best_ld:.2f}:1\n@ {v_best_ld:.0f} km/h",
                  xy=(v_best_ld, sink_best_ld), xytext=(v_best_ld+3, sink_best_ld+0.15),
                  arrowprops=dict(arrowstyle="->", color="green"), fontsize=8, color="green")
@@ -154,11 +156,11 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
     plt.figure(figsize=(9, 6))
     all_rows = []
 
-    # Group A: 20kg ballast (existing list) -> cool spectrum
+    # Group A: 20kg gear weight (existing list) -> cool spectrum
     groupA = getattr(cfg, 'PILOT_EXAMPLES', [])
     nA = len(groupA)
     # Wider color sweep for better separation
-    colorsA = plt.cm.Blues(np.linspace(0.05, 0.95, max(nA, 1)))
+    colorsA = [plt.get_cmap("Blues")(x) for x in np.linspace(0.20, 0.85, max(nA, 1))]
     linestyles = ['-', '--', '-.', ':']
     markers = ['o', 's', 'D', '^', 'v', 'P', 'X']
 
@@ -172,6 +174,7 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
             equalizer_diameter_mm=cfg.EQUALIZER_DIAMETER_MM,
         )
         areas = frontal_areas_iso(person)
+        eq_len_mm = float(areas.get("equalizer_length_mm", 0.0))
 
         rows = []
         A_lines_m2 = lines_area_from_wing_size(wing_max)
@@ -198,31 +201,38 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
         color = colorsA[idx % len(colorsA)]
         ls = linestyles[idx % len(linestyles)]
         mk = markers[idx % len(markers)]
+        lw = max(0.4, 1.2 - 0.1 * idx)
+        ms = max(2.0, 4.0 - 0.3 * idx)
         plt.plot(
             df["speed_kmh"], df["sink_mps"],
-            label=f"{label} ({wing_max}kg, 20kg ballast)",
-            color=color, linestyle=ls, linewidth=0.5,
-            marker=mk, markevery=6, markersize=3.5
+            label=f"{label} ({wing_max}kg, 20kg gear, eq {eq_len_mm:.0f}mm)",
+            color=color, linestyle=ls, linewidth=lw,
+            marker=mk, markevery=6, markersize=ms
         )
         for r in rows:
             all_rows.append({
                 "label": label,
                 "wing_max_kg": wing_max,
-                "ballast": 20,
+                "gear_weight": 20,
                 **r
             })
 
-    # Additional ballast groups: 30kg and 40kg if defined in config (new scheme)
+    # Additional gear weight groups: 30kg and 40kg if defined in config (new scheme)
+    cmap_oranges = plt.get_cmap("Oranges")
+    cmap_greens = plt.get_cmap("Greens")
     extra_groups = [
-        (getattr(cfg, 'PILOT_EXAMPLES_30', []), 30, plt.cm.Oranges, '30kg'),
-        (getattr(cfg, 'PILOT_EXAMPLES_40', []), 40, plt.cm.Greens, '40kg'),
+        (getattr(cfg, 'PILOT_EXAMPLES_30', []), 30, cmap_oranges, '30kg'),
+        (getattr(cfg, 'PILOT_EXAMPLES_40', []), 40, cmap_greens, '40kg'),
     ]
+
+    # Flag to indicate if additive scaling is active; used for legend annotation
+    additive_active = getattr(cfg, 'EQUALIZER_GEAR_ADDITIVE_ENABLED', False)
 
     for group_list, ballast_value, cmap, ballast_label in extra_groups:
         if not group_list:
             continue
         nG = len(group_list)
-        colorsG = cmap(np.linspace(0.05, 0.95, max(nG, 1)))
+        colorsG = cmap(np.linspace(0.20, 0.85, max(nG, 1)))
         for idx, (label, height_cm, weight_kg, sex, wing_max) in enumerate(group_list):
             person = create_person_from_height_weight(
                 height_cm, weight_kg, sex,
@@ -233,6 +243,7 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
                 equalizer_diameter_mm=cfg.EQUALIZER_DIAMETER_MM,
             )
             areas = frontal_areas_iso(person)
+            eq_len_mm = float(areas.get("equalizer_length_mm", 0.0))
 
             rows = []
             A_lines_m2 = lines_area_from_wing_size(wing_max)
@@ -259,28 +270,32 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
             color = colorsG[idx % len(colorsG)]
             ls = linestyles[idx % len(linestyles)]
             mk = markers[idx % len(markers)]
+            # Later groups are plotted after Group A; make them thinner/smaller so they don't hide earlier lines
+            lw_ex = max(0.3, 0.8 - 0.1 * idx - (0.1 if ballast_value >= 40 else 0.0))
+            ms_ex = max(1.8, 3.0 - 0.2 * idx - (0.2 if ballast_value >= 40 else 0.0))
             plt.plot(
                 df["speed_kmh"], df["sink_mps"],
-                label=f"{label} ({wing_max}kg, {ballast_label} ballast)",
-                color=color, linestyle=ls, linewidth=0.5,
-                marker=mk, markevery=6, markersize=3.5
+                label=f"{label} ({wing_max}kg, {ballast_label} gear, eq {eq_len_mm:.0f}mm)",
+                color=color, linestyle=ls, linewidth=lw_ex,
+                marker=mk, markevery=6, markersize=ms_ex
             )
             for r in rows:
                 all_rows.append({
                     "label": label,
                     "wing_max_kg": wing_max,
-                    "ballast": ballast_value,
+                    "gear_weight": ballast_value,
                     **r
                 })
 
     ax = plt.gca()
     ax.invert_yaxis()
     eq_status = "True" if cfg.CD_EQUALIZERS >= 0.5 else "False"
-    plt.title("Polars: sink vs speed (all pilots)")
+    plt.title("Polars: sink vs speed (all pilots, gear weight groups)")
     plt.xlabel("Speed (km/h)")
     plt.ylabel("Sink (m/s)")
     plt.grid(True, alpha=0.3)
-    plt.legend(loc="best", fontsize=8, title="Pilot groups")
+    legend_title = "Pilot groups" + (" (additive eq len)" if additive_active else "")
+    plt.legend(loc="best", fontsize=8, title=legend_title)
     plt.text(0.98, 0.02, f"Equalizers: {eq_status}", transform=ax.transAxes,
              ha="right", va="bottom", fontsize=9,
              bbox=dict(boxstyle="round", fc="white", ec="gray", alpha=0.7))
@@ -315,37 +330,37 @@ def plot_polars_for_all_pilots(CD_WING_REF: float):
 
 
 def plot_115kg_ballast_comparison(CD_WING_REF: float):
-    """Plot a focused ballast comparison around the M-size wing.
+    """Plot a focused gear weight comparison around the M-size wing.
 
-    Curves included:
-      - 115 kg wing at 20/30/40 kg ballast using:
+        Curves included:
+            - 115 kg wing at 20/30/40 kg gear weight using:
           • 95 kg @ 184 cm (20 kg)
           • 85 kg @ 178 cm (30 kg)
           • 75 kg @ 173 cm (40 kg)
-      - 125 kg wing at 20 kg ballast using 105 kg @ 190 cm
-      - For the 40 kg pilot (75 kg @ 173 cm), also plot his 20 kg ballast size:
-        95 kg wing at 20 kg ballast
+            - 125 kg wing at 20 kg gear using 105 kg @ 190 cm
+            - For the 40 kg gear case pilot (75 kg @ 173 cm), also plot his 20 kg gear size:
+                95 kg wing at 20 kg gear
 
     Notes:
-      - Legend matches the multi-pilot plot: "Man {height}cm {weight}kg ({wing}kg, {ballast}kg ballast)".
-      - Colors: Blues for 115 kg cases (shade by ballast), Oranges for 125@20, Greens for 95@20.
-      - Writes CSV when cfg.EXPORT_CSV is True (file: polar_115kg_ballast_comparison.csv).
+    - Legend matches the multi-pilot plot: "Man {height}cm {weight}kg ({wing}kg, {gear}kg gear)".
+    - Colors: Blues for 115 kg cases (shade by gear weight), Oranges for 125@20, Greens for 95@20.
+    - Writes CSV when cfg.EXPORT_CSV is True (file: polar_115kg_gear_comparison.csv).
     """
     try:
         import matplotlib.pyplot as plt
     except Exception as exc:
-        print("\n[polar] matplotlib is not available. Install it to see the ballast comparison plot:")
+        print("\n[polar] matplotlib is not available. Install it to see the gear weight comparison plot:")
         print("  python -m pip install matplotlib")
         print(f"  (reason: {exc})")
         return
 
     cases = [
-        {"wing_max": 115, "ballast": 20, "pilot_weight": 95, "height_cm": 184},
-        {"wing_max": 115, "ballast": 30, "pilot_weight": 85, "height_cm": 178},
-        {"wing_max": 115, "ballast": 40, "pilot_weight": 75, "height_cm": 173},
-        {"wing_max": 125, "ballast": 20, "pilot_weight": 105, "height_cm": 190},
-        # Same 40kg pilot (75kg/173cm) on his 20kg ballast size (95kg wing)
-        {"wing_max": 95,  "ballast": 20, "pilot_weight": 75, "height_cm": 173},
+        {"wing_max": 115, "gear": 20, "pilot_weight": 95, "height_cm": 184},
+        {"wing_max": 115, "gear": 30, "pilot_weight": 85, "height_cm": 178},
+        {"wing_max": 115, "gear": 40, "pilot_weight": 75, "height_cm": 173},
+        {"wing_max": 125, "gear": 20, "pilot_weight": 105, "height_cm": 190},
+        # Same 40kg gear weight pilot (75kg/173cm) on his 20kg gear size (95kg wing)
+        {"wing_max": 95,  "gear": 20, "pilot_weight": 75, "height_cm": 173},
     ]
     speeds = np.linspace(8.0, 65.0/3.6, 57)
 
@@ -355,11 +370,6 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
 
     for idx, c in enumerate(cases):
         wing_max = int(c["wing_max"])
-        # Legend naming aligned with the second plot
-        label = (
-            f"Man {c['height_cm']}cm {c['pilot_weight']}kg "
-            f"({wing_max}kg, {c['ballast']}kg ballast)"
-        )
         person = create_person_from_height_weight(
             c["height_cm"], c["pilot_weight"], "male",
             pilot_max_weight_kg=wing_max,
@@ -369,6 +379,12 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
             equalizer_diameter_mm=cfg.EQUALIZER_DIAMETER_MM,
         )
         areas = frontal_areas_iso(person)
+        eq_len_mm = float(areas.get("equalizer_length_mm", 0.0))
+        # Legend naming aligned with the multi-pilot plot, include eq len
+        label = (
+            f"Man {c['height_cm']}cm {c['pilot_weight']}kg "
+            f"({wing_max}kg, {c['gear']}kg gear, eq {eq_len_mm:.0f}mm)"
+        )
         rows = []
         A_lines_m2 = lines_area_from_wing_size(wing_max)
         for v in speeds:
@@ -390,7 +406,7 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
             sink = v / glide if glide > 0 else float("nan")
             row = {
                 "wing_max_kg": wing_max,
-                "ballast_kg": c["ballast"],
+                "gear_weight_kg": c["gear"],
                 "pilot_weight_kg": c["pilot_weight"],
                 "height_cm": c["height_cm"],
                 "speed_kmh": v * 3.6,
@@ -399,16 +415,16 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
             rows.append(row)
             all_rows.append({"label": label, **row})
 
-        # Distinct colors per wing size; vary shade by ballast for 115 kg wing
+        # Distinct colors per wing size; vary shade by gear weight for 115 kg wing
         if wing_max == 115:
-            shade = {20: 0.25, 30: 0.55, 40: 0.85}.get(c["ballast"], 0.6)
-            color = plt.cm.Blues(shade)
+            shade = {20: 0.25, 30: 0.55, 40: 0.85}.get(c["gear"], 0.6)
+            color = plt.cm.get_cmap("Blues")(shade)
         elif wing_max == 125:
-            color = plt.cm.Oranges(0.7)
+            color = plt.cm.get_cmap("Oranges")(0.7)
         elif wing_max == 95:
-            color = plt.cm.Greens(0.65)
+            color = plt.cm.get_cmap("Greens")(0.65)
         else:
-            color = plt.cm.Greys(0.5)
+            color = plt.cm.get_cmap("Greys")(0.5)
 
         df = pd.DataFrame(rows)
         plt.plot(
@@ -421,7 +437,7 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
     ax = plt.gca()
     ax.invert_yaxis()
     eq_status = "True" if cfg.CD_EQUALIZERS >= 0.5 else "False"
-    plt.title("M-size (115 kg) ballast comparison + 125@20 + 95@20 (40kg pilot)")
+    plt.title("M-size (115 kg) gear weight comparison + 125@20 + 95@20 cases")
     plt.xlabel("Speed (km/h)")
     plt.ylabel("Sink (m/s)")
     plt.grid(True, alpha=0.3)
@@ -436,7 +452,7 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
         try:
             os.makedirs(cfg.PLOTS_DIR, exist_ok=True)
             equ_flag = "True" if cfg.CD_EQUALIZERS >= 0.5 else "False"
-            out_path = os.path.join(cfg.PLOTS_DIR, f"polar_115kg_ballast_comparison_equ={equ_flag}.{cfg.SAVE_FORMAT}")
+            out_path = os.path.join(cfg.PLOTS_DIR, f"polar_115kg_gear_comparison_equ={equ_flag}.{cfg.SAVE_FORMAT}")
             plt.savefig(out_path, dpi=cfg.SAVE_DPI, format=cfg.SAVE_FORMAT, bbox_inches="tight")
             print(f"[saved] {out_path}")
         except Exception as exc:
@@ -453,7 +469,7 @@ def plot_115kg_ballast_comparison(CD_WING_REF: float):
 
     if cfg.EXPORT_CSV and all_rows:
         try:
-            pd.DataFrame(all_rows).to_csv("polar_115kg_ballast_comparison.csv", index=False)
-            print("[saved] polar_115kg_ballast_comparison.csv")
+            pd.DataFrame(all_rows).to_csv("polar_115kg_gear_comparison.csv", index=False)
+            print("[saved] polar_115kg_gear_comparison.csv")
         except Exception as exc:
-            print(f"[warn] failed to save polar_115kg_ballast_comparison.csv: {exc}")
+            print(f"[warn] failed to save polar_115kg_gear_comparison.csv: {exc}")

@@ -119,12 +119,14 @@ def calculate_dimension_from_z(dimension_name: str, sex: str, z_score: float) ->
     return mean + z_score * sd
 
 
+from typing import Optional
+
 def create_person_from_height_weight(height_cm: float, weight_kg: float, sex: str,
-                                     pilot_max_weight_kg: float = None,
-                                     back_angle_deg: float = None,
-                                     upper_arm_angle_deg: float = None,
-                                     protector_height_mm: float = None,
-                                     equalizer_diameter_mm: float = None) -> ISOFields:
+                                     pilot_max_weight_kg: Optional[float] = None,
+                                     back_angle_deg: Optional[float] = None,
+                                     upper_arm_angle_deg: Optional[float] = None,
+                                     protector_height_mm: Optional[float] = None,
+                                     equalizer_diameter_mm: Optional[float] = None) -> ISOFields:
     z = estimate_z_score(height_cm, sex)
 
     body_weight = calculate_dimension_from_z("body_weight_kg", sex, z)
@@ -189,7 +191,43 @@ def frontal_areas_iso(fields: ISOFields) -> Dict[str, float]:
     # Lower body frontal area
     A_lower_body = (fields.thigh_clearance_sitting_mm/1000) * (fields.hip_breadth_sitting_mm/1000)
 
-    equalizer_length_mm = max(0, (fields.pilot_max_weight_kg - 90.0) * 22.0)
+    # Base equalizer length scales with wing size above ~90 kg baseline
+    base_equalizer_length_mm = max(0.0, (fields.pilot_max_weight_kg - 90.0) * 22.0)
+    equalizer_length_mm = base_equalizer_length_mm
+    # Gear-weight based increase via configured mode
+    try:
+        gear_weight_kg = max(0.0, fields.pilot_max_weight_kg - fields.body_weight_kg)
+        mode = getattr(cfg, 'EQUALIZER_GEAR_MODE', 'LEGACY_PER_KG')
+        stage1_thresh = getattr(cfg, 'EQUALIZER_GEAR_STAGE1_THRESHOLD_KG', 1e9)
+        stage2_thresh = getattr(cfg, 'EQUALIZER_GEAR_STAGE2_THRESHOLD_KG', 1e9)
+
+        extra_len_mm = 0.0
+        if mode == 'FIXED_STEPS':
+            # Binary steps: add fixed amount based on threshold crossed
+            step1 = getattr(cfg, 'FIXED_STEP_STAGE1_MM', 0.0)
+            step2 = getattr(cfg, 'FIXED_STEP_STAGE2_MM', 0.0)
+            if gear_weight_kg > stage2_thresh:
+                extra_len_mm = step2
+            elif gear_weight_kg > stage1_thresh:
+                extra_len_mm = step1
+        else:
+            # LEGACY_PER_KG: per-kg piecewise linear increments
+            stage1_mm_per_kg = getattr(cfg, 'EQUALIZER_GEAR_STAGE1_MM_PER_KG', 0.0)
+            stage2_mm_per_kg = getattr(cfg, 'EQUALIZER_GEAR_STAGE2_MM_PER_KG', 0.0)
+            if gear_weight_kg > stage2_thresh:
+                extra_len_mm = stage2_mm_per_kg * (gear_weight_kg - stage2_thresh)
+            elif gear_weight_kg > stage1_thresh:
+                extra_len_mm = stage1_mm_per_kg * (gear_weight_kg - stage1_thresh)
+
+        equalizer_length_mm = base_equalizer_length_mm + max(0.0, extra_len_mm)
+
+        # Optional cap
+        max_len = getattr(cfg, 'EQUALIZER_MAX_LENGTH_MM', None)
+        if isinstance(max_len, (int, float)) and max_len is not None:
+            equalizer_length_mm = min(equalizer_length_mm, float(max_len))
+    except Exception:
+        # Fail silently, keep base length
+        equalizer_length_mm = base_equalizer_length_mm
     A_equalizer_one = (fields.equalizer_diameter_mm/1000) * (equalizer_length_mm/1000)
     A_equalizers = 2.0 * A_equalizer_one
 
@@ -219,13 +257,13 @@ def frontal_areas_iso(fields: ISOFields) -> Dict[str, float]:
 
 
 def drag_all_iso(areas: dict,
-                 speed_mps: float = None,
-                 rho_air: float = None,
-                 Cd_streamlined: float = None,
-                 Cd_head: float = None,
-                 head_exposed_fraction: float = None,
-                 Cd_arms: float = None,
-                 Cd_equalizers: float = None) -> dict:
+                 speed_mps: Optional[float] = None,
+                 rho_air: Optional[float] = None,
+                 Cd_streamlined: Optional[float] = None,
+                 Cd_head: Optional[float] = None,
+                 head_exposed_fraction: Optional[float] = None,
+                 Cd_arms: Optional[float] = None,
+                 Cd_equalizers: Optional[float] = None) -> dict:
     if speed_mps is None:
         speed_mps = cfg.SPEED_MPS
     if rho_air is None:
